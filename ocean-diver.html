@@ -1,0 +1,398 @@
+<title>Ocean Diver</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /*
+    Single dark theme — the ocean is always dark.
+    Layout: full-bleed canvas, no scroll.
+  */
+  :root {
+    --ocean-surface: #0a3a6a;
+    --ocean-mid:     #062a52;
+    --ocean-deep:    #020f1e;
+    --bubble-ring:   rgba(200,235,255,0.85);
+    --bubble-fill:   rgba(180,220,255,0.12);
+    --hint:          rgba(180,220,255,0.45);
+    color-scheme: dark;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--ocean-deep);
+  }
+  canvas {
+    display: block;
+    width: 100%; height: 100%;
+    cursor: none;
+  }
+  #hint {
+    position: fixed;
+    bottom: max(28px, env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--hint);
+    font: 400 13px/1 system-ui, sans-serif;
+    letter-spacing: 0.08em;
+    pointer-events: none;
+    transition: opacity 1s ease;
+    white-space: nowrap;
+  }
+</style>
+
+<canvas id="c"></canvas>
+<div id="hint">move your cursor · touch to swim</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const hint   = document.getElementById('hint');
+
+let W, H;
+function resize() {
+  W = canvas.width  = canvas.offsetWidth  * devicePixelRatio;
+  H = canvas.height = canvas.offsetHeight * devicePixelRatio;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// — State —
+let diverX, diverY, targetX, targetY, diverAngle = 0;
+
+function placeCenter() {
+  diverX  = W / 2;
+  diverY  = H / 2;
+  targetX = W / 2;
+  targetY = H / 2;
+}
+placeCenter();
+window.addEventListener('resize', placeCenter);
+
+// Bubbles pool
+const bubbles = [];
+
+// Input
+function setTarget(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  targetX = (cx - r.left) / r.width  * W;
+  targetY = (cy - r.top)  / r.height * H;
+  fadeHint();
+}
+
+let hintFaded = false;
+function fadeHint() {
+  if (hintFaded) return;
+  hintFaded = true;
+  hint.style.opacity = '0';
+}
+
+canvas.addEventListener('mousemove', e => setTarget(e.clientX, e.clientY));
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  setTarget(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  setTarget(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive: false });
+
+// — Bubble spawning —
+function spawnBubble() {
+  // Regulator sits at local coords (~28, 4) from diver center
+  const lx = 28, ly = 4;
+  const cos = Math.cos(diverAngle);
+  const sin = Math.sin(diverAngle);
+  const mx = diverX + lx * cos - ly * sin;
+  const my = diverY + lx * sin + ly * cos;
+
+  bubbles.push({
+    x: mx + (Math.random() - 0.5) * 5 * devicePixelRatio,
+    y: my,
+    r: (2 + Math.random() * 4) * devicePixelRatio,
+    vx: (Math.random() - 0.5) * 0.35 * devicePixelRatio,
+    vy: -(0.5 + Math.random() * 0.7) * devicePixelRatio,
+    alpha: 0.65 + Math.random() * 0.3,
+    wobble: Math.random() * Math.PI * 2,
+    wobbleSpd: 0.018 + Math.random() * 0.025,
+  });
+}
+
+// — Drawing —
+function drawDiver() {
+  const s = devicePixelRatio;
+  ctx.save();
+  ctx.scale(s, s);
+
+  // Scuba tank
+  ctx.fillStyle = '#8898a8';
+  ctx.beginPath();
+  ctx.roundRect(-22, -8, 11, 20, 3);
+  ctx.fill();
+  ctx.fillStyle = '#b0c0cc';
+  ctx.fillRect(-20, -5, 3, 8);
+
+  // Body wetsuit
+  ctx.fillStyle = '#1b3d5f';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 20, 13, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Neon wetsuit stripe
+  ctx.strokeStyle = '#2a6aaa';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(-14, -4);
+  ctx.lineTo(14, -4);
+  ctx.stroke();
+
+  // Arms
+  ctx.fillStyle = '#1b3d5f';
+  ctx.beginPath();
+  ctx.ellipse(4, -15, 6, 3.5, -0.25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(4, 15, 6, 3.5, 0.25, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Head
+  ctx.fillStyle = '#1b3d5f';
+  ctx.beginPath();
+  ctx.arc(18, 0, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Mask frame
+  ctx.fillStyle = '#08111e';
+  ctx.beginPath();
+  ctx.ellipse(21, 0, 9, 7.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Mask glass
+  ctx.fillStyle = 'rgba(80,170,215,0.45)';
+  ctx.beginPath();
+  ctx.ellipse(22, 0, 6.5, 5.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Glass glint
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(19.5, -2, 2.2, 1.4, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Regulator
+  ctx.fillStyle = '#2a2a2a';
+  ctx.beginPath();
+  ctx.arc(28, 4, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(24, 2);
+  ctx.lineTo(20, 0);
+  ctx.stroke();
+
+  // Flippers (green)
+  ctx.fillStyle = '#1a6640';
+  ctx.beginPath();
+  ctx.moveTo(-18, -11);
+  ctx.bezierCurveTo(-24, -18, -36, -24, -34, -12);
+  ctx.lineTo(-18, -8);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(-18, 11);
+  ctx.bezierCurveTo(-24, 18, -36, 24, -34, 12);
+  ctx.lineTo(-18, 8);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawBubble(b) {
+  ctx.save();
+  ctx.globalAlpha = b.alpha;
+
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(200,235,255,0.9)';
+  ctx.lineWidth = 0.8 * devicePixelRatio;
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(180,220,255,0.12)';
+  ctx.fill();
+
+  // glint
+  ctx.beginPath();
+  ctx.arc(b.x - b.r * 0.32, b.y - b.r * 0.32, b.r * 0.28, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// — Turtle state —
+let turtleX, turtleY, turtleAngle = 0.4;
+function placeTurtle() {
+  turtleX = W * 0.72;
+  turtleY = H * 0.38;
+}
+placeTurtle();
+window.addEventListener('resize', placeTurtle);
+
+function drawTurtle() {
+  const s = devicePixelRatio;
+  ctx.save();
+  ctx.scale(s, s);
+
+  // Back flippers
+  ctx.fillStyle = '#3a7a4a';
+  ctx.beginPath();
+  ctx.ellipse(-10, -17, 5.5, 13, -0.45, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(-10, 17, 5.5, 13, 0.45, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Front flippers
+  ctx.beginPath();
+  ctx.ellipse(7, -19, 6, 14, -0.9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(7, 19, 6, 14, 0.9, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Shell
+  ctx.fillStyle = '#5a7a3a';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 20, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Scute ridges
+  ctx.strokeStyle = '#3d5a28';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(14, 0); ctx.stroke();
+  for (const x of [-7, 0, 7]) {
+    ctx.beginPath(); ctx.moveTo(x, -11); ctx.lineTo(x, 11); ctx.stroke();
+  }
+  ctx.strokeStyle = '#2e4a1e';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 20, 16, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Neck + head
+  ctx.fillStyle = '#4a8040';
+  ctx.beginPath();
+  ctx.ellipse(24, 0, 7, 5.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eye
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(27, -1.8, 1.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.beginPath(); ctx.arc(26.3, -2.5, 0.55, 0, Math.PI * 2); ctx.fill();
+
+  ctx.restore();
+}
+
+// — Main loop —
+let frame = 0, bubbleTimer = 0;
+
+function tick() {
+  requestAnimationFrame(tick);
+  frame++;
+
+  // Swim toward target
+  const dx   = targetX - diverX;
+  const dy   = targetY - diverY;
+  const dist = Math.hypot(dx, dy);
+
+  if (dist > 1.5) {
+    diverX += dx * 0.04;
+    diverY += dy * 0.04;
+
+    const want = Math.atan2(dy, dx);
+    let da = want - diverAngle;
+    while (da >  Math.PI) da -= Math.PI * 2;
+    while (da < -Math.PI) da += Math.PI * 2;
+    diverAngle += da * 0.08;
+  }
+
+  // Spawn bubbles
+  bubbleTimer++;
+  if (bubbleTimer >= 20) {
+    bubbleTimer = 0;
+    spawnBubble();
+    if (Math.random() < 0.35) spawnBubble();
+  }
+
+  // Update bubbles
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i];
+    b.wobble += b.wobbleSpd;
+    b.x += b.vx + Math.sin(b.wobble) * 0.28 * devicePixelRatio;
+    b.y += b.vy;
+    b.alpha -= 0.0025;
+    b.r    += 0.012 * devicePixelRatio;
+    if (b.alpha <= 0 || b.y + b.r < 0) bubbles.splice(i, 1);
+  }
+
+  // Move turtle — slow, lazy drift
+  turtleAngle += 0.0038 * Math.sin(frame * 0.007);
+  const ts = 0.38 * devicePixelRatio;
+  turtleX += Math.cos(turtleAngle) * ts;
+  turtleY += Math.sin(turtleAngle) * ts;
+  const pad = 60 * devicePixelRatio;
+  if (turtleX < -pad) turtleX = W + pad;
+  if (turtleX > W + pad) turtleX = -pad;
+  if (turtleY < -pad) turtleY = H + pad;
+  if (turtleY > H + pad) turtleY = -pad;
+
+  // — Draw —
+  // Ocean gradient
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0,   '#0d3f72');
+  g.addColorStop(0.4, '#062a52');
+  g.addColorStop(1,   '#020f1e');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // God rays from surface
+  ctx.save();
+  for (let i = 0; i < 6; i++) {
+    const rx    = W * (0.08 + i * 0.17);
+    const pulse = 0.022 + Math.sin(frame * 0.009 + i * 1.4) * 0.008;
+    const rg    = ctx.createLinearGradient(rx, 0, rx + 25 * devicePixelRatio, H * 0.72);
+    rg.addColorStop(0, `rgba(100,185,255,${pulse})`);
+    rg.addColorStop(1, 'rgba(100,185,255,0)');
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    const w = 18 * devicePixelRatio;
+    ctx.moveTo(rx - w * 0.6, 0);
+    ctx.lineTo(rx + w,       0);
+    ctx.lineTo(rx + w * 3.2, H * 0.72);
+    ctx.lineTo(rx + w * 0.8, H * 0.72);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Bubbles (behind diver)
+  for (const b of bubbles) drawBubble(b);
+
+  // Turtle
+  ctx.save();
+  ctx.translate(turtleX, turtleY);
+  ctx.rotate(turtleAngle);
+  drawTurtle();
+  ctx.restore();
+
+  // Diver
+  ctx.save();
+  ctx.translate(diverX, diverY);
+  ctx.rotate(diverAngle);
+  drawDiver();
+  ctx.restore();
+}
+
+tick();
+</script>
